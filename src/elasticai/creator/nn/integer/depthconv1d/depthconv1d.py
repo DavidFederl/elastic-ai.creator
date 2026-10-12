@@ -139,7 +139,6 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
 
     def _get_quantized_weights(self) -> torch.Tensor:
         """Quantize the weights and subtract their zero point."""
-        assert not self.training, "int_forward should be called in eval mode"
         q_weights = self.weight_QParams.quantize(self.weight).to("cpu")
 
         if not self.weight_QParams.is_symmetric:
@@ -160,7 +159,6 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
         Returns:
             The quantized bias and the QParams it was quantized with.
         """
-        assert not self.training, "int_forward should be called in eval mode"
         q_bias_QParams = copy.deepcopy(self.bias_QParams)
         new_bias_scale_factor = (
             self.inputs_QParams.scale_factor * self.weight_QParams.scale_factor
@@ -182,7 +180,8 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
         `M = s_x * s_w / s_y` by `m_q * 2**-m_q_shift`. Must be called in eval
         mode, after training.
         """
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         self.q_weights = self._get_quantized_weights()
         self.tmp_quant_bits = (
             self.inputs_QParams.quant_bits + 1 + self.weight_QParams.quant_bits + 1
@@ -220,8 +219,10 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
         Returns:
             The quantized outputs.
         """
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 

@@ -174,8 +174,10 @@ class SoftmaxLUT(DesignCreatorModule, nn.Module, MPQSupport):
         self.precomputed = True
 
     def int_forward(self, q_inputs: torch.Tensor) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 

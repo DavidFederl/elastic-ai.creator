@@ -80,7 +80,8 @@ class FusedFeedForwardNetwork(DesignCreatorModule, nn.Module):
         )
 
     def precompute(self):
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         self.fc1relu.precompute()
         self.fc2.precompute()
         self.precomputed = True
@@ -89,8 +90,10 @@ class FusedFeedForwardNetwork(DesignCreatorModule, nn.Module):
         self,
         q_inputs: torch.Tensor,
     ) -> torch.Tensor:
-        assert self.precomputed, "Precompute the model before running int_forward"
-        assert not self.training, "int_forward() can only be used in inference mode"
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 
         q_f1relu_outputs = self.fc1relu.int_forward(

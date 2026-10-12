@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from elasticai.creator.nn.integer._dtypes import FLOAT_DTYPES, check_dtype
 from elasticai.creator.nn.integer.design_creator_module import DesignCreatorModule
 from elasticai.creator.nn.integer.linear.design import Linear as LinearDesign
+from elasticai.creator.nn.integer.linear.design import check_template_options
 from elasticai.creator.nn.integer.math_operations import MathOperations
 from elasticai.creator.nn.integer.quant_utils import (
     AsymmetricSignedQParams,
@@ -43,7 +44,7 @@ class Linear(DesignCreatorModule, nn.Linear):
         in_features: int,
         out_features: int,
         quant_bits: int,
-        bias: bool = False,
+        bias: bool = True,
         num_dimensions: int | None = None,
         quant_data_dir: str | None = None,
         device: torch.device | str = torch.device("cpu"),
@@ -83,7 +84,18 @@ class Linear(DesignCreatorModule, nn.Linear):
             bias_qparams_cls: Quantization scheme of the bias.
             inputs_qparams_cls: Quantization scheme of the inputs.
             outputs_qparams_cls: Quantization scheme of the outputs.
+
+        Raises:
+            ValueError, NotImplementedError: If no VHDL template exists for the
+                template options, see `check_template_options`.
         """
+        check_template_options(
+            in_features=in_features,
+            num_dimensions=num_dimensions,
+            use_parallelised_template=use_parallelised_template,
+            unroll_factor=unroll_factor,
+            use_pipeline_template=use_pipeline_template,
+        )
         super().__init__(in_features, out_features, bias)
         self.num_dimensions = num_dimensions
 
@@ -180,7 +192,6 @@ class Linear(DesignCreatorModule, nn.Linear):
 
     def _get_quantized_weights(self) -> torch.Tensor:
         """Quantize the weights and subtract their zero point."""
-        assert not self.training, "int_forward should be called in eval mode"
         q_weights = self.weight_QParams.quantize(self.weight).to("cpu")
 
         if not self.weight_QParams.is_symmetric:
@@ -205,7 +216,6 @@ class Linear(DesignCreatorModule, nn.Linear):
         Returns:
             The quantized bias and the QParams it was quantized with.
         """
-        assert not self.training, "int_forward should be called in eval mode"
         q_bias_QParams = copy.deepcopy(bias_QParams)
         new_bias_scale_factor = (
             self.inputs_QParams.scale_factor * self.weight_QParams.scale_factor
@@ -229,8 +239,12 @@ class Linear(DesignCreatorModule, nn.Linear):
         Quantizes weights and bias and approximates the requantization scale
         `M = s_x * s_w / s_y` by `m_q * 2**-m_q_shift`. Must be called in eval
         mode, after training.
+
+        Raises:
+            RuntimeError: If the layer is in training mode.
         """
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         self.q_weights = self._get_quantized_weights()
         if self.bias is not None and self.bias_QParams is not None:
             self.q_bias, self.q_bias_QParams = self._get_quantized_bias(
@@ -265,15 +279,19 @@ class Linear(DesignCreatorModule, nn.Linear):
             The quantized outputs, dtype `torch.int32`.
 
         Raises:
+            RuntimeError: If the layer is in training mode or `precompute` has
+                not been called.
             TypeError: If `q_inputs` is not a `torch.int32` tensor.
         """
-        assert not self.training, "int_forward should be called in eval mode"
-        assert (
-            self.precomputed
-            and self.q_weights is not None
-            and self.scale_factor_m_q is not None
-            and self.scale_factor_m_q_shift is not None
-        ), "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if (
+            not self.precomputed
+            or self.q_weights is None
+            or self.scale_factor_m_q is None
+            or self.scale_factor_m_q_shift is None
+        ):
+            raise RuntimeError("precompute must be called before int_forward")
         check_dtype("q_inputs", q_inputs, torch.int32)
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")

@@ -93,7 +93,8 @@ class AVGPooling1dFlatten(DesignCreatorModule, nn.Module, MPQSupport):
         )
 
     def precompute(self) -> None:
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         L = self.in_features  # e.g., seq_len
         self.scale_factor_M = torch.tensor(
             self.inputs_QParams.scale_factor.item()
@@ -109,8 +110,10 @@ class AVGPooling1dFlatten(DesignCreatorModule, nn.Module, MPQSupport):
         self,
         q_inputs: torch.Tensor,
     ) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
         q_inputs = q_inputs.permute(0, 2, 1)

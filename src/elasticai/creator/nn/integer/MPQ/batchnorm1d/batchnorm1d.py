@@ -134,7 +134,6 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
     def _get_quantized_weights(
         self, weight: torch.Tensor, weight_QParams: QParams
     ) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
         q_weights = weight_QParams.quantize(weight).to("cpu")
 
         if not weight_QParams.is_symmetric:
@@ -152,8 +151,6 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         given_quant_scale: torch.Tensor,
         given_quant_bits: int,
     ) -> tuple[torch.Tensor, QParams]:
-        assert not self.training, "int_forward should be called in eval mode"
-
         q_bias_QParams = copy.deepcopy(bias_QParams)
         q_bias_QParams.set_scale_factor(given_quant_scale)
         q_bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
@@ -162,6 +159,8 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         return q_bias, q_bias_QParams
 
     def precompute(self):
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         mean = self.running_mean
         var = self.running_var
         std = torch.sqrt(var + self.eps)
@@ -206,8 +205,10 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         self,
         q_inputs: torch.Tensor,
     ) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 

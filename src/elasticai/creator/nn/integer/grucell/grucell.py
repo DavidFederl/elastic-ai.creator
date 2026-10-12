@@ -197,8 +197,10 @@ class GRUCell(DesignCreatorModule, nn.Module):
         q_h_prev: torch.Tensor,
         q_c_prev: torch.Tensor = None,
     ) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         self._save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x_1")
         self._save_quant_data(q_h_prev, self.quant_data_dir, f"{self.name}_q_x_2")

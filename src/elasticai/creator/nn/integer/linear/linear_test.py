@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 from torch.nn import functional as F
@@ -658,6 +660,44 @@ def test_precompute_keeps_bias_QParams(linear_layer, inputs) -> None:
     assert torch.equal(linear_layer.forward(inputs), outputs)
 
 
+def test_has_bias_by_default() -> None:
+    layer = Linear(name="linear", in_features=3, out_features=2, quant_bits=8)
+
+    assert layer.bias is not None
+
+
+def test_unroll_factor_below_one_raises() -> None:
+    with pytest.raises(ValueError, match="unroll_factor"):
+        Linear(
+            name="linear", in_features=3, out_features=2, quant_bits=8, unroll_factor=0
+        )
+
+
+def test_precompute_in_training_mode_raises(linear_layer) -> None:
+    linear_layer.train()
+
+    with pytest.raises(RuntimeError, match="eval mode"):
+        linear_layer.precompute()
+
+
+def test_int_forward_in_training_mode_raises(linear_layer, inputs) -> None:
+    linear_layer.forward(inputs)
+    linear_layer.eval()
+    linear_layer.precompute()
+    linear_layer.train()
+
+    with pytest.raises(RuntimeError, match="eval mode"):
+        linear_layer.int_forward(linear_layer.inputs_QParams.quantize(inputs))
+
+
+def test_int_forward_without_precompute_raises(linear_layer, inputs) -> None:
+    linear_layer.forward(inputs)
+    linear_layer.eval()
+
+    with pytest.raises(RuntimeError, match="precompute"):
+        linear_layer.int_forward(linear_layer.inputs_QParams.quantize(inputs))
+
+
 def test_create_design_with_other_inputs_quant_bits_raises(linear_layer, inputs):
     given_inputs_QParams = AsymmetricSignedQParams(
         quant_bits=6, observer=GlobalMinMaxObserver()
@@ -684,3 +724,24 @@ def test_create_design_uses_work_library_and_resource_option(
 
     assert design._work_library_name == "lib"
     assert design._resource_option == "block"
+
+
+@pytest.mark.parametrize(
+    "options, error",
+    [
+        (dict(use_pipeline_template=True), ValueError),
+        (dict(use_pipeline_template=True, use_parallelised_template=True), ValueError),
+        (
+            dict(in_features=1, num_dimensions=2, use_parallelised_template=True),
+            NotImplementedError,
+        ),
+    ],
+)
+def test_invalid_template_options_raise_on_creation(options, error) -> None:
+    parameters: dict[str, Any] = dict(
+        name="linear", in_features=3, out_features=2, quant_bits=8
+    )
+    parameters.update(options)
+
+    with pytest.raises(error):
+        Linear(**parameters)
