@@ -95,3 +95,43 @@ def test_requantizer_strategy(tmp_path):
     q_outputs = layer.int_forward(q_inputs)
 
     assert q_outputs.shape == (4, 2)
+
+
+def test_precompute_keeps_bias_QParams(tmp_path):
+    layer = create_linear(tmp_path)
+    torch.manual_seed(0)
+    inputs = torch.randn(4, 3)
+    layer.train()
+    layer(inputs, None)
+    layer.eval()
+    scale_factor = layer.bias_QParams.scale_factor.clone()
+    with torch.no_grad():
+        outputs = layer(inputs, None)
+
+    layer.precompute()
+
+    assert torch.equal(layer.bias_QParams.scale_factor, scale_factor)
+    with torch.no_grad():
+        assert torch.equal(layer(inputs, None), outputs)
+
+
+@pytest.mark.parametrize(
+    "MPQ_strategy, attribute",
+    [("inheritance", "inputs_QParams"), ("requantizer", "prev_inputs_QParams")],
+)
+def test_forward_stores_a_copy_of_given_inputs_QParams(
+    tmp_path, MPQ_strategy, attribute
+):
+    layer = create_linear(tmp_path, MPQ_strategy=MPQ_strategy)
+    given_inputs_QParams = AsymmetricSignedQParams(
+        quant_bits=8, observer=GlobalMinMaxObserver()
+    )
+    inputs = torch.randn(4, 3)
+    given_inputs_QParams.update_quant_params(inputs)
+    layer.train()
+
+    layer(inputs, given_inputs_QParams)
+
+    stored = getattr(layer, attribute)
+    assert stored is not given_inputs_QParams
+    assert torch.equal(stored.scale_factor, given_inputs_QParams.scale_factor)

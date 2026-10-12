@@ -130,16 +130,22 @@ def test_not_update_quant_params_of_inputs_QParams_in_forward(
     assert expected_zero_point == actual_zero_point
 
 
-def test_use_given_inputs_QParams_in_forward(relu_layer, inputs):
+def test_use_copy_of_given_inputs_QParams_in_forward(relu_layer, inputs):
     given_inputs_QParams = AsymmetricSignedQParams(
         quant_bits=6, observer=GlobalMinMaxObserver()
     )
     relu_layer.train()
     relu_layer.forward(inputs, given_inputs_QParams)
 
-    expected_inputs_QParams = given_inputs_QParams
     actual_inputs_QParams = relu_layer.inputs_QParams
-    assert expected_inputs_QParams == actual_inputs_QParams
+    assert actual_inputs_QParams is not given_inputs_QParams
+    assert actual_inputs_QParams.quant_bits == given_inputs_QParams.quant_bits
+    assert torch.equal(
+        actual_inputs_QParams.scale_factor, given_inputs_QParams.scale_factor
+    )
+    assert torch.equal(
+        actual_inputs_QParams.zero_point, given_inputs_QParams.zero_point
+    )
 
 
 def test_update_quant_params_of_inputs_QParams_in_forward(

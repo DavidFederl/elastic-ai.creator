@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -112,6 +114,7 @@ class Linear(DesignCreatorModule, nn.Linear):
         self.precomputed = False
         self.q_weights: torch.Tensor | None = None
         self.q_bias: torch.Tensor | None = None
+        self.q_bias_QParams: QParams | None = None
         self.scale_factor_M: torch.Tensor | None = None
         self.scale_factor_m_q: torch.Tensor | None = None
         self.scale_factor_m_q_shift: torch.Tensor | None = None
@@ -164,8 +167,8 @@ class Linear(DesignCreatorModule, nn.Linear):
             m_q_shift=int(self.scale_factor_m_q_shift.item()),
             z_x=int(self.inputs_QParams.zero_point.item()),
             z_w=int(self.weight_QParams.zero_point.item()),
-            z_b=int(self.bias_QParams.zero_point.item())
-            if self.bias_QParams is not None
+            z_b=int(self.q_bias_QParams.zero_point.item())
+            if self.q_bias_QParams is not None
             else 0,
             z_y=int(self.outputs_QParams.zero_point.item()),
             work_library_name=self.work_library_name,
@@ -190,30 +193,35 @@ class Linear(DesignCreatorModule, nn.Linear):
 
     def _get_quantized_bias(
         self, bias: torch.Tensor, bias_QParams: QParams
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, QParams]:
         """Quantize the bias with the scale of the accumulator.
 
         The bias is added to the accumulator of `(x - z_x) @ (w - z_w).T`, so
         it uses the scale factor `s_x * s_w`, zero point 0 and the bit width
-        `(x_bits + 1) + (w_bits + 1)`. This overwrites the quantization
-        parameters of `bias_QParams`.
+        `(x_bits + 1) + (w_bits + 1)`. These parameters are returned as a
+        copy of `bias_QParams`, so that `bias_QParams` keeps the parameters
+        learned in training and `forward` still works after `precompute`.
+
+        Returns:
+            The quantized bias and the QParams it was quantized with.
         """
         assert not self.training, "int_forward should be called in eval mode"
+        q_bias_QParams = copy.deepcopy(bias_QParams)
         new_bias_scale_factor = (
             self.inputs_QParams.scale_factor * self.weight_QParams.scale_factor
         )
         new_bias_quant_bits = (self.inputs_QParams.quant_bits + 1) + (
             self.weight_QParams.quant_bits + 1
         )
-        bias_QParams.set_scale_factor(new_bias_scale_factor)
-        bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
-        bias_QParams.set_quant_range(new_bias_quant_bits)
-        q_bias = bias_QParams.quantize(bias).to("cpu")
-        if not bias_QParams.is_symmetric:
+        q_bias_QParams.set_scale_factor(new_bias_scale_factor)
+        q_bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
+        q_bias_QParams.set_quant_range(new_bias_quant_bits)
+        q_bias = q_bias_QParams.quantize(bias).to("cpu")
+        if not q_bias_QParams.is_symmetric:
             q_bias = self.math_ops.intsub(
-                q_bias, bias_QParams.zero_point, new_bias_quant_bits + 1
+                q_bias, q_bias_QParams.zero_point, new_bias_quant_bits + 1
             )
-        return q_bias
+        return q_bias, q_bias_QParams
 
     def precompute(self) -> None:
         """Compute the integer parameters for `int_forward` and `create_design`.
@@ -225,9 +233,12 @@ class Linear(DesignCreatorModule, nn.Linear):
         assert not self.training, "int_forward should be called in eval mode"
         self.q_weights = self._get_quantized_weights()
         if self.bias is not None and self.bias_QParams is not None:
-            self.q_bias = self._get_quantized_bias(self.bias, self.bias_QParams)
+            self.q_bias, self.q_bias_QParams = self._get_quantized_bias(
+                self.bias, self.bias_QParams
+            )
         else:
             self.q_bias = None
+            self.q_bias_QParams = None
 
         scale_factor_M = (
             self.inputs_QParams.scale_factor * self.weight_QParams.scale_factor
@@ -309,8 +320,8 @@ class Linear(DesignCreatorModule, nn.Linear):
             inputs: Float inputs of shape `(..., in_features)`.
             given_inputs_QParams: Quantization parameters of the inputs,
                 usually the output parameters of the previous layer. If given
-                in training mode, they replace `inputs_QParams` instead of
-                being learned from `inputs`.
+                in training mode, a copy of them replaces `inputs_QParams`
+                instead of learning them from `inputs`.
             enable_simquant: Simulate quantization of inputs, weights, bias
                 and outputs. If `False`, the layer acts like `nn.Linear`.
 
@@ -326,7 +337,10 @@ class Linear(DesignCreatorModule, nn.Linear):
                 if given_inputs_QParams is None:
                     self.inputs_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs_QParams = given_inputs_QParams
+                    # Copy instead of assigning, so that the previous layer's
+                    # QParams are not registered as a submodule of this
+                    # layer too, and the two layers do not share one module.
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
 
                 self.weight_QParams.update_quant_params(self.weight)
                 if self.bias is not None and self.bias_QParams is not None:

@@ -1,3 +1,4 @@
+import copy
 from typing import Literal
 
 import torch
@@ -81,9 +82,9 @@ class MPQSupport:
         if self.MPQ_strategy == "requantizer":
             getattr(self, QParams_attr).update_quant_params(inputs)
             if prev_QParams_attr is not None:
-                setattr(self, prev_QParams_attr, given_QParams)
+                setattr(self, prev_QParams_attr, copy.deepcopy(given_QParams))
         elif self.MPQ_strategy == "inheritance":
-            setattr(self, QParams_attr, given_QParams)
+            setattr(self, QParams_attr, copy.deepcopy(given_QParams))
         else:
             raise ValueError(f"Unsupported MPQ strategy: {self.MPQ_strategy}")
 

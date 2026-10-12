@@ -1,3 +1,4 @@
+import copy
 from typing import Literal
 
 import torch
@@ -113,7 +114,7 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
             name=name,
             x_data_width=self.inputs_QParams.quant_bits,
             w_data_width=self.weight_QParams.quant_bits,
-            b_data_width=self.bias_QParams.quant_bits,
+            b_data_width=self.tmp_quant_bits,
             y_data_width=self.outputs_QParams.quant_bits,
             num_dimensions=self.num_dimensions,
             in_features=self.in_features,
@@ -124,7 +125,7 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
             m_q_shift=self.scale_factor_m_q_shift.item(),
             z_x=self.inputs_QParams.zero_point.item(),
             z_w=self.modified_weight_QParams.zero_point.item(),
-            z_b=self.bias_QParams.zero_point.item(),
+            z_b=self.q_bias_zero_point,
             z_y=self.outputs_QParams.zero_point.item(),
             work_library_name="work",
             resource_option="auto",
@@ -150,14 +151,15 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         bias_QParams: QParams,
         given_quant_scale: torch.Tensor,
         given_quant_bits: int,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, QParams]:
         assert not self.training, "int_forward should be called in eval mode"
 
-        bias_QParams.set_scale_factor(given_quant_scale)
-        bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
-        bias_QParams.set_quant_range(given_quant_bits)
-        q_bias = bias_QParams.quantize(bias).to("cpu")
-        return q_bias
+        q_bias_QParams = copy.deepcopy(bias_QParams)
+        q_bias_QParams.set_scale_factor(given_quant_scale)
+        q_bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
+        q_bias_QParams.set_quant_range(given_quant_bits)
+        q_bias = q_bias_QParams.quantize(bias).to("cpu")
+        return q_bias, q_bias_QParams
 
     def precompute(self):
         mean = self.running_mean
@@ -180,12 +182,15 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         new_bias_QParms_scale = (
             self.inputs_QParams.scale_factor * self.modified_weight_QParams.scale_factor
         )
-        self.q_bias = self._get_quantized_bias(
+        self.q_bias, q_bias_QParams = self._get_quantized_bias(
             bias=modified_bias,
             bias_QParams=self.bias_QParams,
             given_quant_scale=new_bias_QParms_scale,
             given_quant_bits=self.tmp_quant_bits,
         )
+        # Only the zero point is kept. Storing the QParams module would add
+        # its buffers to the state_dict of the layer.
+        self.q_bias_zero_point = int(q_bias_QParams.zero_point.item())
 
         self.scale_factor_M = (
             self.inputs_QParams.scale_factor * self.modified_weight_QParams.scale_factor

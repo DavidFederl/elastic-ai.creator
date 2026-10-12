@@ -60,3 +60,26 @@ def test_running_statistics_are_not_attached_to_the_graph():
     assert layer.running_mean is running_mean
     assert layer.running_mean.grad_fn is None
     assert layer.running_var.grad_fn is None
+
+
+def test_precompute_keeps_bias_QParams():
+    layer = create_batchnorm()
+    layer.set_quant_bits_from_config(
+        {"bn_0.inputs": 8, "bn_0.weights": 8, "bn_0.bias": 8, "bn_0.outputs": 8}
+    )
+    torch.manual_seed(0)
+    inputs = torch.randn(2, 4, 3)
+    layer.train()
+    layer(inputs, None)
+    layer.eval()
+    quant_bits = layer.bias_QParams.quant_bits
+    scale_factor = layer.bias_QParams.scale_factor.clone()
+
+    layer.precompute()
+    q_bias = layer.q_bias.clone()
+    layer.precompute()
+
+    assert layer.bias_QParams.quant_bits == quant_bits
+    assert torch.equal(layer.bias_QParams.scale_factor, scale_factor)
+    assert torch.equal(layer.q_bias, q_bias)
+    assert layer.create_design("bn_0")._b_data_width == (8 + 1) + (8 + 1)

@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn.functional as F
 
@@ -111,7 +113,7 @@ class ReLU(DesignCreatorModule):
             inputs: Float inputs of any shape.
             given_inputs_QParams: Quantization parameters of the inputs,
                 usually the output parameters of the previous layer. If given
-                in training mode, they replace `inputs_QParams` instead of
+                in training mode, a copy of them replaces `inputs_QParams` instead of
                 being learned from `inputs`.
             enable_simquant: Simulate quantization of the inputs. If `False`,
                 the layer acts like `torch.nn.functional.relu`.
@@ -124,7 +126,7 @@ class ReLU(DesignCreatorModule):
                 if given_inputs_QParams is None:
                     self.inputs_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
 
             inputs = SimQuant.apply(inputs, self.inputs_QParams)
 

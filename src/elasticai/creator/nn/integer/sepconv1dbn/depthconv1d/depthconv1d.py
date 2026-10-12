@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -87,7 +89,7 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
             m_q_shift=self.scale_factor_m_q_shift.item(),
             z_x=self.inputs_QParams.zero_point.item(),
             z_w=self.weight_QParams.zero_point.item(),
-            z_b=self.bias_QParams.zero_point.item(),
+            z_b=self.q_bias_zero_point,
             z_y=self.outputs_QParams.zero_point.item(),
             work_library_name="work",
             resource_option="auto",
@@ -105,21 +107,22 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
             )
         return q_weights
 
-    def _get_quantized_bias(self) -> torch.Tensor:
+    def _get_quantized_bias(self) -> tuple[torch.Tensor, QParams]:
         assert not self.training, "int_forward should be called in eval mode"
+        q_bias_QParams = copy.deepcopy(self.bias_QParams)
         new_bias_scale_factor = (
             self.inputs_QParams.scale_factor * self.weight_QParams.scale_factor
         )
 
-        self.bias_QParams.set_scale_factor(new_bias_scale_factor)
-        self.bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
-        self.bias_QParams.set_quant_range(self.tmp_quant_bits)
-        q_bias = self.bias_QParams.quantize(self.bias).to("cpu")
-        if not self.bias_QParams.is_symmetric:
+        q_bias_QParams.set_scale_factor(new_bias_scale_factor)
+        q_bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
+        q_bias_QParams.set_quant_range(self.tmp_quant_bits)
+        q_bias = q_bias_QParams.quantize(self.bias).to("cpu")
+        if not q_bias_QParams.is_symmetric:
             q_bias = self.math_ops.intsub(
-                q_bias, self.bias_QParams.zero_point, self.tmp_quant_bits + 1
+                q_bias, q_bias_QParams.zero_point, self.tmp_quant_bits + 1
             )
-        return q_bias
+        return q_bias, q_bias_QParams
 
     def precompute(self) -> None:
         assert not self.training, "int_forward should be called in eval mode"
@@ -128,7 +131,10 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
             self.inputs_QParams.quant_bits + 1 + self.weight_QParams.quant_bits + 1
         )
         if self.bias is not None:
-            self.q_bias = self._get_quantized_bias()
+            self.q_bias, q_bias_QParams = self._get_quantized_bias()
+            # Only the zero point is kept. Storing the QParams module would add
+            # its buffers to the state_dict of the layer.
+            self.q_bias_zero_point = int(q_bias_QParams.zero_point.item())
             self.tmp_quant_bits += 1
 
         self.scale_factor_M = (
@@ -199,7 +205,7 @@ class DepthConv1d(DesignCreatorModule, nn.Conv1d):
                 if given_inputs_QParams is None:
                     self.inputs_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
 
                 self.weight_QParams.update_quant_params(self.weight)
                 if self.bias is not None:

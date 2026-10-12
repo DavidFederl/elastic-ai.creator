@@ -327,9 +327,26 @@ def test_use_given_inputs_QParams_in_forward(linear_layer, inputs) -> None:
     linear_layer.train()
     linear_layer.forward(inputs, given_inputs_QParams)
 
-    expected_inputs_QParams = given_inputs_QParams
     actual_inputs_QParams = linear_layer.inputs_QParams
-    assert expected_inputs_QParams == actual_inputs_QParams
+    assert actual_inputs_QParams.quant_bits == given_inputs_QParams.quant_bits
+    assert torch.equal(
+        actual_inputs_QParams.scale_factor, given_inputs_QParams.scale_factor
+    )
+    assert torch.equal(
+        actual_inputs_QParams.zero_point, given_inputs_QParams.zero_point
+    )
+
+
+def test_given_inputs_QParams_are_not_shared(linear_layer, inputs) -> None:
+    given_inputs_QParams = AsymmetricSignedQParams(
+        quant_bits=6, observer=GlobalMinMaxObserver()
+    )
+    linear_layer.train()
+
+    linear_layer.forward(inputs, given_inputs_QParams)
+
+    assert linear_layer.inputs_QParams is not given_inputs_QParams
+    assert all(module is not given_inputs_QParams for module in linear_layer.modules())
 
 
 def test_update_quant_params_of_inputs_QParams_in_forward(
@@ -556,9 +573,9 @@ def test_get_quantized_bias_in_precompute(
         expected_q_bias,
     ) = q_bias_subtracted
 
-    actual_new_bias_scale_factor = linear_layer.bias_QParams.scale_factor
-    actual_new_zero_point = linear_layer.bias_QParams.zero_point
-    actual_new_quant_bits = linear_layer.bias_QParams.quant_bits
+    actual_new_bias_scale_factor = linear_layer.q_bias_QParams.scale_factor
+    actual_new_zero_point = linear_layer.q_bias_QParams.zero_point
+    actual_new_quant_bits = linear_layer.q_bias_QParams.quant_bits
     actual_q_bias = linear_layer.q_bias
 
     assert torch.allclose(
@@ -623,6 +640,22 @@ def test_int_forward_with_float_inputs_raises(linear_layer, inputs) -> None:
 
     with pytest.raises(TypeError, match="q_inputs"):
         linear_layer.int_forward(inputs)
+
+
+def test_precompute_keeps_bias_QParams(linear_layer, inputs) -> None:
+    linear_layer.forward(inputs)
+    linear_layer.eval()
+    scale_factor = linear_layer.bias_QParams.scale_factor.clone()
+    zero_point = linear_layer.bias_QParams.zero_point.clone()
+    quant_bits = linear_layer.bias_QParams.quant_bits
+    outputs = linear_layer.forward(inputs)
+
+    linear_layer.precompute()
+
+    assert torch.equal(linear_layer.bias_QParams.scale_factor, scale_factor)
+    assert torch.equal(linear_layer.bias_QParams.zero_point, zero_point)
+    assert linear_layer.bias_QParams.quant_bits == quant_bits
+    assert torch.equal(linear_layer.forward(inputs), outputs)
 
 
 def test_create_design_with_other_inputs_quant_bits_raises(linear_layer, inputs):

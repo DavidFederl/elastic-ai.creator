@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 
@@ -117,7 +119,7 @@ class SepConv1dBN(DesignCreatorModule, nn.Module):
                 if given_inputs_QParams is None:
                     self.inputs_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
 
         DepthConv1d_outputs = self.depthconv1d.forward(
             inputs=inputs,
