@@ -75,7 +75,6 @@ class LayerNorm1d(DesignCreatorModule, nn.LayerNorm):
     def _get_quantized_weights(
         self, weight: torch.Tensor, weight_QParams: nn.Module
     ) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
         q_weights = weight_QParams.quantize(weight).to("cpu")
 
         if not weight_QParams.is_symmetric:
@@ -87,6 +86,8 @@ class LayerNorm1d(DesignCreatorModule, nn.LayerNorm):
         return q_weights
 
     def precompute(self) -> None:
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         self.q_weights = self._get_quantized_weights(
             weight=self.weight, weight_QParams=self.weight_QParams
         )
@@ -137,8 +138,10 @@ class LayerNorm1d(DesignCreatorModule, nn.LayerNorm):
         return result
 
     def int_forward(self, q_inputs: torch.Tensor) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 

@@ -104,7 +104,8 @@ class AVGPooling1d(DesignCreatorModule, nn.Module):
         Approximates `M = s_x / (s_y * in_features)` by
         `m_q * 2**-m_q_shift`. Must be called in eval mode, after training.
         """
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         L = self.in_features  # e.g., seq_len
         self.scale_factor_M = torch.tensor(
             self.inputs_QParams.scale_factor.item()
@@ -132,8 +133,10 @@ class AVGPooling1d(DesignCreatorModule, nn.Module):
         Returns:
             The quantized outputs, of shape `(batch, 1, channels)`.
         """
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 

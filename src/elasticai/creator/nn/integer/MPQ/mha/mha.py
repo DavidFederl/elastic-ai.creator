@@ -137,8 +137,10 @@ class MultiHeadAttention(DesignCreatorModule, nn.Module):
         q_k: torch.Tensor,
         q_v: torch.Tensor,
     ):
-        assert self.precomputed, "Precompute the model before running int_forward"
-        assert not self.training, "int_forward() can only be used in inference mode"
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
 
         save_quant_data(q_q, self.quant_data_dir, f"{self.name}_q_q")
         save_quant_data(q_k, self.quant_data_dir, f"{self.name}_q_k")

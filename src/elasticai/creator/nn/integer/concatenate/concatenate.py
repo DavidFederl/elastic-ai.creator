@@ -94,8 +94,10 @@ class Concatenate(DesignCreatorModule, nn.Module):
         q_inputs1: torch.Tensor,  # inputs
         q_inputs2: torch.Tensor,  # h_prev
     ) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs1, self.quant_data_dir, f"{self.name}_q_x_1")
         save_quant_data(q_inputs2, self.quant_data_dir, f"{self.name}_q_x_2")

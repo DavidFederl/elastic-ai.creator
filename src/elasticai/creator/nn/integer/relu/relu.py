@@ -88,7 +88,8 @@ class ReLU(DesignCreatorModule):
         Returns:
             The quantized outputs, quantized with the same parameters.
         """
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
         zero_point = self.inputs_QParams.zero_point.to(q_inputs.device)
         q_outputs = torch.maximum(q_inputs, zero_point.clone().detach())

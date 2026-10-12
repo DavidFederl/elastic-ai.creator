@@ -126,7 +126,6 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
         )
 
     def _get_quantized_weights(self) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
         q_weights = self.weight_QParams.quantize(self.weight).to("cpu")
 
         if not self.weight_QParams.is_symmetric:
@@ -138,7 +137,6 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
         return q_weights
 
     def _get_quantized_bias(self) -> tuple[torch.Tensor, QParams]:
-        assert not self.training, "int_forward should be called in eval mode"
         q_bias_QParams = copy.deepcopy(self.bias_QParams)
         new_bias_scale_factor = (
             self.inputs_QParams.scale_factor * self.weight_QParams.scale_factor
@@ -157,7 +155,8 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
         return q_bias, q_bias_QParams
 
     def precompute(self) -> None:
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("precompute must be called in eval mode")
         self.q_weights = self._get_quantized_weights()
         if self.bias is not None:
             self.q_bias, q_bias_QParams = self._get_quantized_bias()
@@ -183,8 +182,10 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
         self,
         q_inputs: torch.Tensor,
     ) -> torch.Tensor:
-        assert not self.training, "int_forward should be called in eval mode"
-        assert self.precomputed, "precompute should be called before int_forward"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
+        if not self.precomputed:
+            raise RuntimeError("precompute must be called before int_forward")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 

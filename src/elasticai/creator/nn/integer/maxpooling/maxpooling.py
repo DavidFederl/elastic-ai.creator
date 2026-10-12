@@ -117,7 +117,8 @@ class MaxPooling1d(DesignCreatorModule, nn.Module):
             `(batch, channels, seq_len // kernel_size)`, quantized with the
             same parameters as the inputs.
         """
-        assert not self.training, "int_forward should be called in eval mode"
+        if self.training:
+            raise RuntimeError("int_forward must be called in eval mode")
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 
