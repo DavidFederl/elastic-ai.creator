@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 
@@ -179,12 +181,12 @@ class MatrixMulti(DesignCreatorModule, nn.Module):
                 if given_inputs1_QParams is None:
                     self.inputs1_QParams.update_quant_params(inputs1)
                 else:
-                    self.inputs1_QParams = given_inputs1_QParams
+                    self.inputs1_QParams = copy.deepcopy(given_inputs1_QParams)
 
                 if given_inputs2_QParams is None:
                     self.inputs2_QParams.update_quant_params(inputs2)
                 else:
-                    self.inputs2_QParams = given_inputs2_QParams
+                    self.inputs2_QParams = copy.deepcopy(given_inputs2_QParams)
 
             inputs1 = SimQuant.apply(inputs1, self.inputs1_QParams)
             inputs2 = SimQuant.apply(inputs2, self.inputs2_QParams)

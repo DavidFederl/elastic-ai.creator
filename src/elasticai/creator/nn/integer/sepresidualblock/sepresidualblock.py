@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn as nn
 
@@ -207,7 +209,7 @@ class SepResidualBlock(nn.Module):
                 if given_inputs_QParams is None:
                     self.inputs_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
 
         residual = inputs
         outputs = self.depthconv1d_0.forward(

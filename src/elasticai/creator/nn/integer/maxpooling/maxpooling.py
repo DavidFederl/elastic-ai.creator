@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -151,7 +153,7 @@ class MaxPooling1d(DesignCreatorModule, nn.Module):
             inputs: Float inputs of shape `(batch, channels, seq_len)`.
             given_inputs_QParams: Quantization parameters of the inputs,
                 usually the output parameters of the previous layer. If given
-                in training mode, they replace `inputs_QParams` instead of
+                in training mode, a copy of them replaces `inputs_QParams` instead of
                 being learned from `inputs`.
             enable_simquant: Simulate quantization of the inputs.
 
@@ -163,7 +165,7 @@ class MaxPooling1d(DesignCreatorModule, nn.Module):
                 if given_inputs_QParams is None:
                     self.inputs_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
 
             inputs = SimQuant.apply(inputs, self.inputs_QParams)
 

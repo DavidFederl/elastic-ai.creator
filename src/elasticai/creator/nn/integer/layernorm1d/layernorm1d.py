@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 
@@ -195,7 +197,7 @@ class LayerNorm1d(DesignCreatorModule, nn.LayerNorm):
                 if given_inputs_QParams is None:
                     self.inputs_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
 
             inputs = SimQuant.apply(inputs, self.inputs_QParams)
 

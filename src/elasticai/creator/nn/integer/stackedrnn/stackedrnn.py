@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn as nn
 
@@ -138,7 +140,7 @@ class StackedRNN(DesignCreatorModule, nn.Module):
         if enable_simquant:
             if self.training:
                 if given_inputs_QParams is not None:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
                 else:
                     self.inputs_QParams.update_quant_params(inputs)
 

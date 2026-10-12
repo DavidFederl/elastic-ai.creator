@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 
 import torch
@@ -180,15 +181,15 @@ class ScaledDotProductAttention(DesignCreatorModule, nn.Module):
         if enable_simquant:
             if self.training:
                 if given_inputs_q_QParams is not None:
-                    self.inputs_q_QParams = given_inputs_q_QParams
+                    self.inputs_q_QParams = copy.deepcopy(given_inputs_q_QParams)
                 else:
                     self.inputs_q_QParams.update_quant_params(q)
                 if given_inputs_k_QParams is not None:
-                    self.inputs_k_QParams = given_inputs_k_QParams
+                    self.inputs_k_QParams = copy.deepcopy(given_inputs_k_QParams)
                 else:
                     self.inputs_k_QParams.update_quant_params(k)
                 if given_inputs_v_QParams is not None:
-                    self.inputs_v_QParams = given_inputs_v_QParams
+                    self.inputs_v_QParams = copy.deepcopy(given_inputs_v_QParams)
                 else:
                     self.inputs_v_QParams.update_quant_params(v)
 

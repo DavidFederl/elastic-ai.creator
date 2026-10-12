@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 
@@ -223,7 +225,7 @@ class SoftmaxLUT(DesignCreatorModule, nn.Module):
                 if given_inputs_QParams is None:
                     self.inputs1_QParams.update_quant_params(inputs)
                 else:
-                    self.inputs1_QParams = given_inputs_QParams
+                    self.inputs1_QParams = copy.deepcopy(given_inputs_QParams)
 
         max_input = inputs.max(dim=-1, keepdim=True)[0]
         inputs = inputs - max_input

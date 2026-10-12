@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn as nn
 
@@ -156,17 +158,17 @@ class RNNLayer(nn.Module):
         if enable_simquant:
             if self.training:
                 if given_inputs_QParams is not None:
-                    self.inputs_QParams = given_inputs_QParams
+                    self.inputs_QParams = copy.deepcopy(given_inputs_QParams)
                 else:
                     self.inputs_QParams.update_quant_params(inputs)
                 if self.training:
                     if given_h_prev_QParams is not None:
-                        self.h_prev_QParams = given_h_prev_QParams
+                        self.h_prev_QParams = copy.deepcopy(given_h_prev_QParams)
                     else:
                         self.h_prev_QParams.update_quant_params(h_prev)
                 if self.training:
                     if given_c_prev_QParams is not None:
-                        self.c_prev_QParams = given_c_prev_QParams
+                        self.c_prev_QParams = copy.deepcopy(given_c_prev_QParams)
                     else:
                         self.c_prev_QParams.update_quant_params(c_prev)
 
