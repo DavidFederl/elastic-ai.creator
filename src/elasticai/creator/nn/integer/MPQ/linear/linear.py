@@ -40,7 +40,6 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
     ):
         super().__init__(in_features, out_features, bias)
         self.num_dimensions = num_dimensions
-        self.enable_bias = bias
 
         self.name = name
         self.quantizable_elements = ["inputs", "weights", "outputs"]
@@ -60,7 +59,10 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
         for element in self.quantizable_elements:
             key = f"{self.name}.{element}"
             quant_bits_per_element[element] = quant_configs.get(key)
+        self._check_quant_bits_configured(quant_bits_per_element)
 
+        # The bias width follows from the inputs and weights; a configured
+        # value is ignored.
         if "bias" in quant_bits_per_element:
             quant_bits_per_element["bias"] = (quant_bits_per_element["inputs"] + 1) + (
                 quant_bits_per_element["weights"] + 1
@@ -79,7 +81,7 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
             observer=GlobalMinMaxObserver(),
         ).to(self.device)
 
-        if self.enable_bias:
+        if self.bias is not None:
             self.bias_QParams = SymmetricSignedQParams(
                 quant_bits=self.quant_bits_per_element["bias"],
                 observer=GlobalMinMaxObserver(),
@@ -91,22 +93,35 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
         ).to(self.device)
 
     def create_design(self, name: str) -> LinearDesign:
+        # The hardware always adds a bias, so a layer without one gets a bias
+        # of zeros with the width a quantized bias would have.
+        if self.bias is not None:
+            b_data_width = self.bias_QParams.quant_bits
+            bias = self.q_bias.tolist()
+            z_b = int(self.bias_QParams.zero_point.item())
+        else:
+            b_data_width = (self.inputs_QParams.quant_bits + 1) + (
+                self.weight_QParams.quant_bits + 1
+            )
+            bias = [0] * self.out_features
+            z_b = 0
+
         return LinearDesign(
             name=name,
             x_data_width=self.inputs_QParams.quant_bits,
             w_data_width=self.weight_QParams.quant_bits,
-            b_data_width=(self.bias_QParams.quant_bits if self.enable_bias else 0),
+            b_data_width=b_data_width,
             y_data_width=self.outputs_QParams.quant_bits,
             in_features=self.in_features,
             num_dimensions=self.num_dimensions,
             out_features=self.out_features,
             weights=self.q_weights.tolist(),
-            bias=self.q_bias.tolist(),
+            bias=bias,
             m_q=self.scale_factor_m_q.item(),
             m_q_shift=self.scale_factor_m_q_shift.item(),
             z_x=self.inputs_QParams.zero_point.item(),
             z_w=self.weight_QParams.zero_point.item(),
-            z_b=self.bias_QParams.zero_point.item(),
+            z_b=z_b,
             z_y=self.outputs_QParams.zero_point.item(),
             work_library_name="work",
             resource_option="auto",
@@ -225,6 +240,7 @@ class Linear(DesignCreatorModule, nn.Linear, MPQSupport):
 
             inputs = SimQuant.apply(inputs, self.inputs_QParams)
             weight = SimQuant.apply(self.weight, self.weight_QParams)
+            bias = None
             if self.bias is not None:
                 bias = SimQuant.apply(self.bias, self.bias_QParams)
         else:
