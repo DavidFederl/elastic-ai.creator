@@ -73,7 +73,7 @@ class Linear(DesignCreatorModule, nn.Linear):
                 `(num_dimensions, in_features)`. `None` for 1D inputs.
             quant_data_dir: Directory for the quantized inputs and outputs
                 saved by `int_forward`. `None` disables saving.
-            device: Device of the quantization parameters.
+            device: Device of the weights, bias and quantization parameters.
             enable_error_analysis: Also save the float outputs of `forward`
                 and the dequantized outputs of `int_forward`.
             use_parallelised_template: See `LinearDesign`.
@@ -97,7 +97,7 @@ class Linear(DesignCreatorModule, nn.Linear):
             unroll_factor=unroll_factor,
             use_pipeline_template=use_pipeline_template,
         )
-        super().__init__(in_features, out_features, bias)
+        super().__init__(in_features, out_features, bias, device=device)
         self.num_dimensions = num_dimensions
 
         self.name = name
@@ -207,7 +207,7 @@ class Linear(DesignCreatorModule, nn.Linear):
         if not self.weight_QParams.is_symmetric:
             q_weights = self.math_ops.intsub(
                 q_weights,
-                self.weight_QParams.zero_point,
+                self.weight_QParams.zero_point.cpu(),
                 self.weight_QParams.quant_bits + 1,
             )
         return q_weights
@@ -255,7 +255,7 @@ class Linear(DesignCreatorModule, nn.Linear):
         q_bias = q_bias_QParams.quantize(bias).to("cpu")
         if not q_bias_QParams.is_symmetric:
             q_bias = self.math_ops.intsub(
-                q_bias, q_bias_QParams.zero_point, new_bias_quant_bits + 1
+                q_bias, q_bias_QParams.zero_point.cpu(), new_bias_quant_bits + 1
             )
         return q_bias, q_bias_QParams
 
@@ -297,12 +297,15 @@ class Linear(DesignCreatorModule, nn.Linear):
         applied as a multiplication by `m_q` and a right shift by `m_q_shift`.
         Inputs and outputs are saved to `quant_data_dir`.
 
+        The computation runs on the CPU, whatever the device of the layer,
+        because torch has no integer matrix multiplication on CUDA or MPS.
+
         Args:
             q_inputs: Inputs quantized with `inputs_QParams`, dtype
                 `torch.int32`.
 
         Returns:
-            The quantized outputs, dtype `torch.int32`.
+            The quantized outputs, dtype `torch.int32`, on the CPU.
 
         Raises:
             RuntimeError: If the layer is in training mode or `precompute` has
@@ -320,10 +323,13 @@ class Linear(DesignCreatorModule, nn.Linear):
             raise RuntimeError("precompute must be called before int_forward")
         check_dtype("q_inputs", q_inputs, torch.int32)
 
+        q_inputs = q_inputs.cpu()
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 
         q_inputs = self.math_ops.intsub(
-            q_inputs, self.inputs_QParams.zero_point, self.inputs_QParams.quant_bits + 1
+            q_inputs,
+            self.inputs_QParams.zero_point.cpu(),
+            self.inputs_QParams.quant_bits + 1,
         )
 
         tmp = self.math_ops.int_mac(
@@ -339,7 +345,7 @@ class Linear(DesignCreatorModule, nn.Linear):
         )
 
         q_outputs = self.math_ops.intadd(
-            tmp, self.outputs_QParams.zero_point, self.outputs_QParams.quant_bits
+            tmp, self.outputs_QParams.zero_point.cpu(), self.outputs_QParams.quant_bits
         )
 
         save_quant_data(q_outputs, self.quant_data_dir, f"{self.name}_q_y")

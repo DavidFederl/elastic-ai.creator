@@ -673,6 +673,21 @@ def test_int_forward_with_float_inputs_raises(linear_layer, inputs) -> None:
         linear_layer.int_forward(inputs)
 
 
+def test_parameters_are_created_on_device() -> None:
+    layer = Linear(
+        name="linear",
+        in_features=3,
+        out_features=2,
+        quant_bits=8,
+        bias=True,
+        device="meta",
+    )
+
+    assert layer.weight.device.type == "meta"
+    assert layer.bias.device.type == "meta"
+    assert layer.weight_QParams.scale_factor.device.type == "meta"
+
+
 def test_precompute_keeps_bias_QParams(linear_layer, inputs) -> None:
     linear_layer.forward(inputs)
     linear_layer.eval()
@@ -725,6 +740,31 @@ def test_int_forward_without_precompute_raises(linear_layer, inputs) -> None:
 
     with pytest.raises(RuntimeError, match="precompute"):
         linear_layer.int_forward(linear_layer.inputs_QParams.quantize(inputs))
+
+
+def _accelerator() -> str | None:
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return None
+
+
+@pytest.mark.skipif(_accelerator() is None, reason="needs a CUDA or MPS device")
+def test_int_forward_on_accelerator_matches_cpu(linear_layer, inputs) -> None:
+    linear_layer.forward(inputs)
+    linear_layer.eval()
+    linear_layer.precompute()
+    q_inputs = linear_layer.inputs_QParams.quantize(inputs)
+    expected = linear_layer.int_forward(q_inputs)
+    device = _accelerator()
+    linear_layer.to(device)
+    linear_layer.precompute()
+
+    actual = linear_layer.int_forward(q_inputs.to(device))
+
+    assert actual.device.type == "cpu"
+    assert torch.equal(actual, expected)
 
 
 def test_create_design_with_other_inputs_quant_bits_raises(linear_layer, inputs):
