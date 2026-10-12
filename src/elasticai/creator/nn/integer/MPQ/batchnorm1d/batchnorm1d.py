@@ -33,7 +33,7 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         norm_dim: int,
         eps: float,
         momentum: float,
-        affine: bool,
+        affine: bool = True,
         track_running_stats: bool,
         num_dimensions: int,
         in_features: int,
@@ -43,6 +43,11 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         enable_error_analysis: bool = False,
         MPQ_strategy: Literal["inheritance", "requantizer"] | None = None,
     ):
+        if not affine:
+            raise NotImplementedError(
+                "BatchNorm1d requires affine=True; quantizing a layer without "
+                "weight and bias is not implemented."
+            )
         super().__init__(
             norm_dim,
             eps,
@@ -56,12 +61,9 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         self.norm_dim = norm_dim
 
         self.name = name
-        self.quantizable_elements = [
-            "inputs",
-            "weights",
-            "bias",
-            "outputs",
-        ]
+        # The bias width is derived from the inputs and weights in
+        # `set_quant_bits_from_config`, so it is not read from the config.
+        self.quantizable_elements = ["inputs", "weights", "outputs"]
         self.quant_bits_per_element = None
         self.quant_data_dir = quant_data_dir
         self.device = device
@@ -76,11 +78,11 @@ class BatchNorm1d(DesignCreatorModule, nn.BatchNorm1d, MPQSupport):
         for element in self.quantizable_elements:
             key = f"{self.name}.{element}"
             quant_bits_per_element[element] = quant_configs.get(key)
+        self._check_quant_bits_configured(quant_bits_per_element)
 
-        if "bias" in quant_bits_per_element:
-            quant_bits_per_element["bias"] = (quant_bits_per_element["inputs"] + 1) + (
-                quant_bits_per_element["weights"] + 1
-            )
+        quant_bits_per_element["bias"] = (quant_bits_per_element["inputs"] + 1) + (
+            quant_bits_per_element["weights"] + 1
+        )
         self.quant_bits_per_element = quant_bits_per_element
         self._init_element_Qparams()
 
