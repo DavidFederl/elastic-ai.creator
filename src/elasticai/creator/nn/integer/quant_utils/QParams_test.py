@@ -174,6 +174,16 @@ def test_dequantize():
     assert torch.allclose(actual_dq_x, expected_dq_x, atol=1e-4)
 
 
+@pytest.mark.parametrize(
+    "x_q", [torch.tensor([1.0, 2.0]), torch.tensor([1, 2], dtype=torch.int64)]
+)
+def test_dequantize_rejects_non_int32(x_q):
+    qparams = AsymmetricSignedQParams(quant_bits=8, observer=GlobalMinMaxObserver())
+
+    with pytest.raises(TypeError):
+        qparams.dequantize(x_q)
+
+
 def test_state_dict():
     ASSSParams = AsymmetricSignedQParams(quant_bits=8, observer=GlobalMinMaxObserver())
 
@@ -433,3 +443,15 @@ def test_SymmetricUnsignedQParams_quantizes_negative_values_to_zero():
 
     assert torch.equal(x_q, torch.tensor([0, 0, 0, 254], dtype=torch.int32))
     assert torch.equal(qparams.dequantize(x_q)[:3], torch.zeros(3, dtype=torch.float32))
+
+
+@pytest.mark.parametrize(
+    "qparams_cls", [SymmetricSignedQParams, SymmetricUnsignedQParams]
+)
+def test_symmetric_params_have_float32_scale_and_int32_zero_point(qparams_cls):
+    qparams = qparams_cls(quant_bits=8, observer=GlobalMinMaxObserver())
+
+    qparams.update_quant_params(torch.tensor([0.5, 2.0], dtype=torch.float64))
+
+    assert qparams.scale_factor.dtype == torch.float32
+    assert qparams.zero_point.dtype == torch.int32

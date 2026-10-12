@@ -261,6 +261,7 @@ class QParams(nn.Module, ABC):
             TypeError: If `x_q` is not a `torch.Tensor` or does not have dtype
                 `torch.int32`.
         """
+        check_dtype("x_q", x_q, torch.int32)
         zero_point = self.zero_point.to(x_q.device)
         scale_factor = self.scale_factor.to(x_q.device)
         x_q = self.math_ops.intsub(x_q, zero_point, self.quant_bits + 1)
@@ -361,10 +362,9 @@ class SymmetricSignedQParams(QParams):
         min_float = -max_extent
 
         scale_factor = (max_float - min_float) / (max_quant.float() - min_quant.float())
-        scale_factor = torch.max(scale_factor, eps)
+        scale_factor = torch.max(scale_factor, eps).to(torch.float32)
 
-        zero_point = torch.zeros(scale_factor.size())
-        zero_point = zero_point.clone().detach().to(torch.int32)
+        zero_point = torch.zeros(scale_factor.size(), dtype=torch.int32)
 
         return scale_factor, zero_point, min_float, max_float
 
@@ -417,10 +417,9 @@ class SymmetricUnsignedQParams(QParams):
         )
 
         scale_factor = (max_float) / (max_quant.float() - min_quant.float())
-        scale_factor = torch.max(scale_factor, eps)
+        scale_factor = torch.max(scale_factor, eps).to(torch.float32)
 
-        zero_point = torch.zeros(scale_factor.size())
-        zero_point = zero_point.clone().detach().to(torch.int32)
+        zero_point = torch.zeros(scale_factor.size(), dtype=torch.int32)
 
         return scale_factor, zero_point, min_float, max_float
 
