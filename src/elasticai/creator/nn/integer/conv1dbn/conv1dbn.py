@@ -219,12 +219,15 @@ class Conv1dBN(DesignCreatorModule, nn.Module):
 
             mean = tmp_outputs.mean(dim=(0, 2))  # [batch_size, out_channels, seq_len]
             var = tmp_outputs.var(dim=(0, 2))
-            self.bn1d.running_mean = (
-                1 - self.bn1d.momentum
-            ) * self.bn1d.running_mean + self.bn1d.momentum * mean
-            self.bn1d.running_var = (
-                1 - self.bn1d.momentum
-            ) * self.bn1d.running_var + self.bn1d.momentum * var
+            # Update the buffers in place and without autograd, so that they do
+            # not keep the graph of every training step alive.
+            with torch.no_grad():
+                self.bn1d.running_mean.mul_(1 - self.bn1d.momentum).add_(
+                    mean, alpha=self.bn1d.momentum
+                )
+                self.bn1d.running_var.mul_(1 - self.bn1d.momentum).add_(
+                    var, alpha=self.bn1d.momentum
+                )
         else:
             mean = self.bn1d.running_mean
             var = self.bn1d.running_var
