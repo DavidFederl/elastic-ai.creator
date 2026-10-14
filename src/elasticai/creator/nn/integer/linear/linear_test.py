@@ -1,3 +1,4 @@
+import warnings
 from typing import Any
 
 import pytest
@@ -627,6 +628,34 @@ def test_num_dimensions_defaults_to_none() -> None:
     assert layer.num_dimensions is None
 
 
+def test_create_design_without_precompute_raises() -> None:
+    layer = Linear(name="linear", in_features=3, out_features=2, quant_bits=8)
+
+    with pytest.raises(RuntimeError, match="precompute"):
+        layer.create_design("linear")
+
+
+def test_create_design_without_bias_uses_zero_bias(tmp_path) -> None:
+    torch.manual_seed(0)
+    layer = Linear(
+        name="linear",
+        in_features=3,
+        out_features=2,
+        quant_bits=8,
+        bias=False,
+        quant_data_dir=str(tmp_path),
+    )
+    layer.train()
+    layer(torch.randn(4, 3))
+    layer.eval()
+    layer.precompute()
+
+    design = layer.create_design("linear")
+
+    assert design._bias == [0, 0]
+    assert design._z_b == 0
+
+
 def test_forward_with_int_inputs_raises() -> None:
     layer = Linear(name="linear", in_features=3, out_features=2, quant_bits=8)
 
@@ -724,6 +753,25 @@ def test_create_design_uses_work_library_and_resource_option(
 
     assert design._work_library_name == "lib"
     assert design._resource_option == "block"
+
+
+def test_precompute_warns_if_bias_is_clamped(linear_layer, inputs) -> None:
+    linear_layer.forward(inputs)
+    linear_layer.eval()
+    with torch.no_grad():
+        linear_layer.bias[0] = 1e9
+
+    with pytest.warns(UserWarning, match="1 bias values of linear .* clamped"):
+        linear_layer.precompute()
+
+
+def test_precompute_does_not_warn_if_bias_fits(linear_layer, inputs) -> None:
+    linear_layer.forward(inputs)
+    linear_layer.eval()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        linear_layer.precompute()
 
 
 @pytest.mark.parametrize(
