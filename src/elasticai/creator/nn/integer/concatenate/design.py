@@ -1,5 +1,3 @@
-import numpy as np
-
 from elasticai.creator.file_generation.savable import Path
 from elasticai.creator.file_generation.template import (
     InProjectTemplate,
@@ -41,12 +39,10 @@ class Concatenate(Design):
         self._m_q_2 = m_q_2
         self._m_q_1_shift = m_q_1_shift
         self._m_q_2_shift = m_q_2_shift
-        self._m_q_1_data_width = (
-            int(np.ceil(np.log2(self._m_q_1))) + 1 if self._m_q_1 != 0 else 1
-        )
-        self._m_q_2_data_width = (
-            int(np.ceil(np.log2(self._m_q_2))) + 1 if self._m_q_2 != 0 else 1
-        )
+        # M_Q is converted with `to_signed`, so it needs one bit more than its
+        # magnitude. ceil(log2(m_q)) + 1 was one bit short for powers of 2.
+        self._m_q_1_data_width = int(self._m_q_1).bit_length() + 1
+        self._m_q_2_data_width = int(self._m_q_2).bit_length() + 1
 
         self._z_x1 = z_x1
         self._z_x2 = z_x2

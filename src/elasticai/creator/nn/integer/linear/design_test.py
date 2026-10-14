@@ -63,7 +63,7 @@ entity linear_0 is
         Z_W : integer := 0;
         Z_B : integer := 0;
         Z_Y : integer := 0;
-        M_Q_DATA_WIDTH : integer := 2;
+        M_Q_DATA_WIDTH : integer := 3;
         Y_RESOURCE_OPTION : string := "distributed"
     );
     port (
@@ -601,6 +601,15 @@ def create_linear_design(
         unroll_factor=unroll_factor,
         use_pipeline_template=use_pipeline_template,
     )
+
+
+@pytest.mark.parametrize(
+    "m_q, expected_width", [(0, 1), (1, 2), (2, 3), (3, 3), (4, 4), (5, 4), (255, 9)]
+)
+def test_m_q_data_width_fits_m_q_as_signed(m_q, expected_width) -> None:
+    design = create_linear_design(m_q=m_q)
+
+    assert design._m_q_data_width == expected_width
 
 
 def test_parallelised_template_with_one_input_feature_is_not_implemented() -> None:

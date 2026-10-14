@@ -1,4 +1,5 @@
 import copy
+import warnings
 
 import torch
 from torch import nn
@@ -144,15 +145,17 @@ class Linear(DesignCreatorModule, nn.Linear):
             name: Name of the VHDL entity.
 
         Raises:
+            RuntimeError: If `precompute` has not been called.
             ValueError: If inputs, weights or outputs are not quantized with
                 `quant_bits` bits.
         """
-        assert (
-            self.precomputed
-            and self.q_weights is not None
-            and self.scale_factor_m_q is not None
-            and self.scale_factor_m_q_shift is not None
-        ), "precompute should be called before create_design"
+        if (
+            not self.precomputed
+            or self.q_weights is None
+            or self.scale_factor_m_q is None
+            or self.scale_factor_m_q_shift is None
+        ):
+            raise RuntimeError("precompute must be called before create_design")
         # The hardware uses one data width for inputs, weights and outputs, and
         # a bias width of 2 * (data_width + 1), which matches the bias bit
         # width (x_bits + 1) + (w_bits + 1) only if both are `quant_bits`.
@@ -167,6 +170,15 @@ class Linear(DesignCreatorModule, nn.Linear):
                     f"got {qparams.quant_bits}"
                 )
 
+        # The hardware always adds a bias, so a layer without one gets a bias
+        # of zeros.
+        if self.q_bias is not None and self.q_bias_QParams is not None:
+            bias = self.q_bias.tolist()
+            z_b = int(self.q_bias_QParams.zero_point.item())
+        else:
+            bias = [0] * self.out_features
+            z_b = 0
+
         return LinearDesign(
             name=name,
             data_width=self.quant_bits,
@@ -174,14 +186,12 @@ class Linear(DesignCreatorModule, nn.Linear):
             num_dimensions=self.num_dimensions,
             out_features=self.out_features,
             weights=self.q_weights.tolist(),
-            bias=self.q_bias.tolist() if self.q_bias is not None else [],
+            bias=bias,
             m_q=int(self.scale_factor_m_q.item()),
             m_q_shift=int(self.scale_factor_m_q_shift.item()),
             z_x=int(self.inputs_QParams.zero_point.item()),
             z_w=int(self.weight_QParams.zero_point.item()),
-            z_b=int(self.q_bias_QParams.zero_point.item())
-            if self.q_bias_QParams is not None
-            else 0,
+            z_b=z_b,
             z_y=int(self.outputs_QParams.zero_point.item()),
             work_library_name=self.work_library_name,
             resource_option=self.resource_option,
@@ -213,6 +223,9 @@ class Linear(DesignCreatorModule, nn.Linear):
         copy of `bias_QParams`, so that `bias_QParams` keeps the parameters
         learned in training and `forward` still works after `precompute`.
 
+        A warning is issued if bias values do not fit into the bit width and
+        are clamped.
+
         Returns:
             The quantized bias and the QParams it was quantized with.
         """
@@ -226,6 +239,19 @@ class Linear(DesignCreatorModule, nn.Linear):
         q_bias_QParams.set_scale_factor(new_bias_scale_factor)
         q_bias_QParams.set_zero_point(torch.zeros((1), dtype=torch.int32))
         q_bias_QParams.set_quant_range(new_bias_quant_bits)
+        unclamped_q_bias = torch.round(bias.detach() / new_bias_scale_factor)
+        num_clamped = int(
+            (
+                (unclamped_q_bias < q_bias_QParams.min_quant)
+                | (unclamped_q_bias > q_bias_QParams.max_quant)
+            ).sum()
+        )
+        if num_clamped > 0:
+            warnings.warn(
+                f"{num_clamped} bias values of {self.name} do not fit into "
+                f"{new_bias_quant_bits} bits and are clamped",
+                stacklevel=3,
+            )
         q_bias = q_bias_QParams.quantize(bias).to("cpu")
         if not q_bias_QParams.is_symmetric:
             q_bias = self.math_ops.intsub(
