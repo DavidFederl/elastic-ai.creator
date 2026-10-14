@@ -35,6 +35,19 @@ entity ${name} is
     );
 end ${name};
 architecture rtl of ${name} is
+    -- Saturate to the range of a signed number with `width` bits.
+    function saturate(value : signed; width : natural) return signed is
+        constant MAX_VAL : integer := 2**(width - 1) - 1;
+        constant MIN_VAL : integer := -(2**(width - 1));
+    begin
+        if value > to_signed(MAX_VAL, value'length) then
+            return to_signed(MAX_VAL, width);
+        elsif value < to_signed(MIN_VAL, value'length) then
+            return to_signed(MIN_VAL, width);
+        else
+            return resize(value, width);
+        end if;
+    end function;
     function shift_with_rounding_x1(
         product : in signed(X_1_DATA_WIDTH + 1 + M_Q_DATA_WIDTH - 1 downto 0);
         scaler_m_shift : in integer
@@ -120,7 +133,7 @@ architecture rtl of ${name} is
     signal y_store_addr : integer range 0 to NUM_FEATURES * NUM_DIMENSIONS;
     signal y_store_addr_std : std_logic_vector(Y_ADDR_WIDTH - 1 downto 0);
     signal y_store_data : std_logic_vector(Y_DATA_WIDTH - 1 downto 0);
-    signal sum : signed(Y_DATA_WIDTH + 1 downto 0) := (others=>'0');
+    signal sum : signed(Y_DATA_WIDTH + 2 downto 0) := (others=>'0');
 begin
     n_clock <= not clock;
     x_1_int <= signed(x_1);
@@ -148,7 +161,7 @@ begin
     end process fsm;
     add : process( clock, layer_state )
         variable input_idx : integer  range 0 to NUM_FEATURES * NUM_DIMENSIONS-1 := 0;
-        variable var_y_store : signed(Y_DATA_WIDTH + 1 downto 0);
+        variable var_y_store : signed(Y_DATA_WIDTH + 3 downto 0);
     begin
         if rising_edge(clock) then
             if layer_state=s_stop then
@@ -178,8 +191,8 @@ begin
                         sum <= resize(x_1_scaled,sum'length) + resize(x_2_scaled,sum'length);
                         add_state <= s_output;
                     when s_output =>
-                        var_y_store := sum + to_signed(Z_Y, sum'length);
-                        y_store_data <= std_logic_vector(resize(var_y_store, y_store_data'length));
+                        var_y_store := resize(sum, var_y_store'length) + to_signed(Z_Y, var_y_store'length);
+                        y_store_data <= std_logic_vector(saturate(var_y_store, y_store_data'length));
                         y_store_addr <= input_idx;
                         y_store_en <= '1';
                         if input_idx < NUM_DIMENSIONS * NUM_FEATURES-1 then

@@ -90,9 +90,11 @@ begin
         uut_enable <= '0';
         valid <= '0';
         wait until reset='0';
-        uut_enable <= '1';
         wait for C_CLK_PERIOD;
         while not ENDFILE (fp_inputs) loop
+            -- Enable the layer for every sample, so that it starts again.
+            uut_enable <= '1';
+            wait for C_CLK_PERIOD;
             input_rd_cnt := 0;
             while input_rd_cnt < IN_FEATURES*NUM_DIMENSIONS loop
                 line_rd_cnt := 0;
@@ -124,6 +126,7 @@ begin
                 output_rd_cnt := output_rd_cnt + 1;
             end loop;
             uut_enable <= '0';
+            wait for C_CLK_PERIOD;
         end loop;
         wait until falling_edge(clock);
         file_close (fp_inputs);

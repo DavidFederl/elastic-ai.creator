@@ -50,10 +50,12 @@ class SepConv1dBN(DesignCreatorModule, nn.Module):
             quant_data_dir=self.quant_data_dir,
             device=device,
         )
+        # The pointwise convolution runs on the outputs of the depthwise one,
+        # which are shorter than the inputs without "same" padding.
         self.pointconv1dbn = PointConv1dBN(
             in_channels=self.in_channels,
             out_channels=out_channels,
-            seq_len=self.seq_len,
+            seq_len=self.seq_len + 2 * self.depthconv1d.padding_len - kernel_size + 1,
             name=self.name + "_pointconv1dbn_0",
             quant_bits=self.quant_bits,
             quant_data_dir=self.quant_data_dir,

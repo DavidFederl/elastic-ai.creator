@@ -35,6 +35,19 @@ entity ${name} is
     );
 end ${name};
 architecture rtl of ${name} is
+    -- Saturate to the range of a signed number with `width` bits.
+    function saturate(value : signed; width : natural) return signed is
+        constant MAX_VAL : integer := 2**(width - 1) - 1;
+        constant MIN_VAL : integer := -(2**(width - 1));
+    begin
+        if value > to_signed(MAX_VAL, value'length) then
+            return to_signed(MAX_VAL, width);
+        elsif value < to_signed(MIN_VAL, value'length) then
+            return to_signed(MIN_VAL, width);
+        else
+            return resize(value, width);
+        end if;
+    end function;
     -- Shift and round, keep original width
     function shift_with_rounding_fullwidth(
         product : in signed(DATA_WIDTH + 1 + M_Q_DATA_WIDTH - 1 downto 0);
@@ -136,7 +149,7 @@ begin
         variable x1_input_idx, x1_end_idx : integer  range 0 to X1_NUM_FEATURES * NUM_DIMENSIONS := 0;
         variable x2_input_idx, x2_end_idx : integer  range 0 to X2_NUM_FEATURES * NUM_DIMENSIONS := 0;
         variable output_idx : integer  range 0 to (X1_NUM_FEATURES + X2_NUM_FEATURES) * NUM_DIMENSIONS := 0;
-        variable var_y_store : signed( DATA_WIDTH  downto 0);
+        variable var_y_store : signed(DATA_WIDTH + 1 downto 0);
     begin
         if rising_edge(clock) then
             if layer_state=s_stop then
@@ -182,8 +195,8 @@ begin
                         x_scaled <= clamp_signed(x_shifted_fullwidth);
                         concat_state <= s_output;
                     when s_output =>
-                        var_y_store := x_scaled + to_signed(Z_Y, x_scaled'length);
-                        y_store_data <= std_logic_vector(resize(var_y_store, y_store_data'length));
+                        var_y_store := resize(x_scaled, var_y_store'length) + to_signed(Z_Y, var_y_store'length);
+                        y_store_data <= std_logic_vector(saturate(var_y_store, y_store_data'length));
                         y_store_addr <= output_idx;
                         y_store_en <= '1';
                         output_idx := output_idx + 1;

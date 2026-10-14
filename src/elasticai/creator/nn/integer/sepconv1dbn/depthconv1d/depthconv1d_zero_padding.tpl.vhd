@@ -35,6 +35,19 @@ entity ${name} is
     );
 end entity ${name};
 architecture rtl of ${name} is
+    -- Saturate to the range of a signed number with `width` bits.
+    function saturate(value : signed; width : natural) return signed is
+        constant MAX_VAL : integer := 2**(width - 1) - 1;
+        constant MIN_VAL : integer := -(2**(width - 1));
+    begin
+        if value > to_signed(MAX_VAL, value'length) then
+            return to_signed(MAX_VAL, width);
+        elsif value < to_signed(MIN_VAL, value'length) then
+            return to_signed(MIN_VAL, width);
+        else
+            return resize(value, width);
+        end if;
+    end function;
     function log2(val : INTEGER) return natural is
         variable result : natural;
     begin
@@ -75,14 +88,14 @@ architecture rtl of ${name} is
             TMP_3 := TMP_2 + 1;
         end if;
         if is_negative then
-            return -resize(TMP_3, DATA_WIDTH + 1);
+            return -saturate(TMP_3, DATA_WIDTH + 1);
         else
-            return resize(TMP_3, DATA_WIDTH + 1);
+            return saturate(TMP_3, DATA_WIDTH + 1);
         end if;
     end function;
     constant W_ADDR_WIDTH : integer :=  log2(IN_CHANNELS * KERNEL_SIZE);
     constant B_ADDR_WIDTH : integer :=  log2(IN_CHANNELS);
-    constant OUT_SEQ_LEN : integer := IN_SEQ_LEN;
+    constant OUT_SEQ_LEN : integer := IN_SEQ_LEN + 2 * PADDING_LEN - KERNEL_SIZE + 1;
     constant X_IDX_SHIFT_PER_ROW : integer := IN_SEQ_LEN - (kernel_size - 1);
     signal M_Q_SIGNED : signed(M_Q_DATA_WIDTH - 1 downto 0) := to_signed(M_Q, M_Q_DATA_WIDTH);
     type t_layer_state is (s_stop, s_forward, s_finished);
@@ -107,7 +120,7 @@ architecture rtl of ${name} is
     signal zero_padding_en : std_logic := '1';
 begin
     done <= '1' when layer_state = s_finished else '0';
-    s_depth_x <= to_signed(Z_X+Z_X, s_depth_x'length) when zero_padding_en = '1' else signed(x);
+    s_depth_x <= to_signed(Z_X, s_depth_x'length) when zero_padding_en = '1' else signed(x);
     FSM_PROC : process(clock, enable)
     begin
         if rising_edge(clock) then
@@ -138,7 +151,7 @@ begin
         variable row_idx : integer range 0 to IN_CHANNELS := 0;
         variable y_idx : integer range 0 to OUT_CHANNELS * OUT_SEQ_LEN := 0;
         variable var_b_add_z_b : integer range -2**(2*(DATA_WIDTH+1)-1) to 2**(2*(DATA_WIDTH+1)-1)-1 := 0;
-        variable var_y_store : signed(DATA_WIDTH downto 0);
+        variable var_y_store : signed(DATA_WIDTH + 1 downto 0);
     begin
         if rising_edge(clock) then
             if layer_state = s_stop then
@@ -151,6 +164,11 @@ begin
                 y_idx := 0;
                 x_idx := offset_x_idx-PADDING_LEN;
                 valid <= '0';
+                cnt_in_kernel := 0;
+                column_idx := 0;
+                s_depth_w_addr <= (others => '0');
+                s_depth_x_addr <= (others => '0');
+                s_depth_b_addr <= (others => '0');
             else
                 case depth_conv_state is
                     when s_init =>
@@ -184,8 +202,8 @@ begin
                         y_depth_scaled <= scaling(macc_depth_sum, M_Q_SIGNED, M_Q_SHIFT);
                         depth_conv_state <= s_output;
                     when s_output =>
-                        var_y_store := y_depth_scaled + to_signed(Z_Y, y_depth_scaled'length);
-                        y_depth_store_data <= std_logic_vector(resize(var_y_store, y_depth_store_data'length));
+                        var_y_store := resize(y_depth_scaled, var_y_store'length) + to_signed(Z_Y, var_y_store'length);
+                        y_depth_store_data <= std_logic_vector(saturate(var_y_store, y_depth_store_data'length));
                         y_depth_store_en <= '1';
                         y_depth_store_addr <= to_unsigned(y_idx, y_depth_store_addr'length);
                         y_idx := y_idx + 1;
@@ -204,7 +222,7 @@ begin
                         end if;
                     when s_wait =>
                         if ready='1' then
-                            if column_idx < IN_SEQ_LEN-1 then
+                            if column_idx < OUT_SEQ_LEN-1 then
                                 column_idx := column_idx + 1;
                                 offset_x_idx := offset_x_idx + 1;
                                 x_idx := offset_x_idx-PADDING_LEN;
@@ -225,7 +243,8 @@ begin
                     s_depth_x_addr <= std_logic_vector(to_unsigned(x_idx_addr, s_depth_x_addr'length));
                 end if;
                 s_depth_b_addr <= std_logic_vector(to_unsigned(row_idx, s_depth_b_addr'length));
-                if (column_idx = 0 and cnt_in_kernel < PADDING_LEN) or (column_idx=OUT_SEQ_LEN-1 and cnt_in_kernel >= KERNEL_SIZE-PADDING_LEN) then
+                -- Pad where the kernel reaches outside of the input sequence.
+                if column_idx + cnt_in_kernel < PADDING_LEN or column_idx + cnt_in_kernel >= IN_SEQ_LEN + PADDING_LEN then
                     zero_padding_en <= '1';
                 else
                     zero_padding_en <= '0';

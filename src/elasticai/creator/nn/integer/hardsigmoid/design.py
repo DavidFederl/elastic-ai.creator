@@ -98,8 +98,10 @@ class HardSigmoid(Design):
             f"if signed_x <= {self._quantized_minus_three} then "
             f"signed_y <= to_signed({self._quantized_zero}, {self._data_width});"
         )
+        # int_forward computes the formula for all inputs between the
+        # quantized -3 and 3, both exclusive.
         for input_value in range(
-            self._quantized_minus_three + 1, self._quantized_three - 1
+            self._quantized_minus_three + 1, self._quantized_three
         ):
             # Calculate the corresponding output value based on the HardSigmoid formula
             output_value = int((input_value) / 8.0) + self._tmp
@@ -138,8 +140,10 @@ class HardSigmoid(Design):
             f"if signed_x <= {self._quantized_minus_three} then "
             f"signed_y <= to_signed({self._quantized_zero}, {self._data_width});"
         )
+        # int_forward computes the formula for all inputs between the
+        # quantized -3 and 3, both exclusive.
         for input_value in range(
-            self._quantized_minus_three + 1, self._quantized_three - 1
+            self._quantized_minus_three + 1, self._quantized_three
         ):
             # Calculate the corresponding output value based on the HardSigmoid formula
             output_value = int((input_value) / 8.0) + self._tmp
@@ -149,7 +153,7 @@ class HardSigmoid(Design):
                     f"elsif signed_x <= {input_value} then "
                     f"signed_y <= to_signed({output_value}, {self._data_width});"
                 )
-            elif input_value == self._quantized_three - 2:
+            elif input_value == self._quantized_three - 1:
                 process_content.append(
                     f"elsif signed_x <= {input_value} then "
                     f"signed_y <= to_signed({output_value}, {self._data_width});"
