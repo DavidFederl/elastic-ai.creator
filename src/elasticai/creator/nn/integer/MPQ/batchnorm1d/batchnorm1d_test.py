@@ -1,4 +1,5 @@
 import pytest
+import torch
 
 from elasticai.creator.nn.integer.MPQ.batchnorm1d.batchnorm1d import BatchNorm1d
 
@@ -42,3 +43,20 @@ def test_missing_quant_bits_in_config_raises():
 
     with pytest.raises(ValueError, match="bn_0.weights"):
         layer.set_quant_bits_from_config({"bn_0.inputs": 8, "bn_0.outputs": 8})
+
+
+def test_running_statistics_are_not_attached_to_the_graph():
+    layer = create_batchnorm()
+    layer.set_quant_bits_from_config(
+        {"bn_0.inputs": 8, "bn_0.weights": 8, "bn_0.bias": 8, "bn_0.outputs": 8}
+    )
+    running_mean = layer.running_mean
+    inputs = torch.randn(2, 4, 3)
+
+    layer.train()
+    for _ in range(3):
+        layer(inputs.clone().requires_grad_(), None).sum().backward()
+
+    assert layer.running_mean is running_mean
+    assert layer.running_mean.grad_fn is None
+    assert layer.running_var.grad_fn is None
