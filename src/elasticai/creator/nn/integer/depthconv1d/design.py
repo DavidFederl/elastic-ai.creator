@@ -167,6 +167,7 @@ class DepthConv1d(Design):
             name=rom_name["weights"],
             data_width=self._data_width,
             values_as_integers=_flatten_params(self._weights),
+            registered=True,
         )
         rom_weights.save_to(destination.create_subpath(rom_name["weights"]))
 
@@ -174,6 +175,7 @@ class DepthConv1d(Design):
             name=rom_name["bias"],
             data_width=(self._data_width + 1) * 2,
             values_as_integers=self._bias,
+            registered=True,
         )
         rom_bias.save_to(destination.create_subpath(rom_name["bias"]))
 
