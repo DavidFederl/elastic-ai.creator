@@ -44,6 +44,7 @@ class Conv1dBN(DesignCreatorModule, nn.Module):
         self.kernel_size = kernel_size
         self.seq_len = seq_len
         self.padding = padding
+        self.padding_len = get_padding_len(self.padding, self.kernel_size)
 
         self.name = name
         self.quant_bits = quant_bits
@@ -158,15 +159,15 @@ class Conv1dBN(DesignCreatorModule, nn.Module):
 
         save_quant_data(q_inputs, self.quant_data_dir, f"{self.name}_q_x")
 
-        q_inputs = self.math_ops.intsub(
-            q_inputs, self.inputs_QParams.zero_point, self.inputs_QParams.quant_bits + 1
-        )
-
-        self.padding_len = get_padding_len(self.padding, self.kernel_size)
+        # Pad with the zero point before subtracting it, so that the padded
+        # values represent 0.
         q_inputs = get_padded_q_inputs(
             padding_len=self.padding_len,
             q_inputs=q_inputs,
             inputs_QParams=self.inputs_QParams,
+        )
+        q_inputs = self.math_ops.intsub(
+            q_inputs, self.inputs_QParams.zero_point, self.inputs_QParams.quant_bits + 1
         )
 
         if self.q_fused_bias is not None:

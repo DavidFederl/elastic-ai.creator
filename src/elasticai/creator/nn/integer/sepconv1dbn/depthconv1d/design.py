@@ -7,7 +7,6 @@ from elasticai.creator.file_generation.template import (
 )
 from elasticai.creator.nn.integer.math_operations import get_padded_count
 from elasticai.creator.nn.integer.ram.design import Ram
-from elasticai.creator.nn.integer.vhdl_test_automation import get_vhdl_templates
 from elasticai.creator.vhdl.auto_wire_protocols.port_definitions import create_port
 from elasticai.creator.vhdl.code_generation.addressable import calculate_address_width
 from elasticai.creator.vhdl.design.design import Design
@@ -111,15 +110,13 @@ class DepthConv1d(Design):
             resource_option=self._resource_option,
         )
 
-        template_file_name, test_template_file_name = get_vhdl_templates(
-            self._padding_len, "depthconv1d"
-        )
-        if self._padding_len != 0:
-            template_parameters["padding_len"] = str(self._padding_len)
+        # The template pads only where the kernel reaches outside of the
+        # inputs, so it also handles a padding length of 0.
+        template_parameters["padding_len"] = str(self._padding_len)
 
         template = InProjectTemplate(
             package=module_to_package(self.__module__),
-            file_name=template_file_name,
+            file_name="depthconv1d_zero_padding.tpl.vhd",
             parameters=template_parameters,
         )
         destination.create_subpath(self.name).as_file(".vhd").write(template)

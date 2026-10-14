@@ -24,13 +24,9 @@ class AVGPooling1d(DesignCreatorModule, nn.Module):
     """Global average pooling over the sequence, with integer inference.
 
     Inputs have the shape `(batch, seq_len, channels)`. The layer averages
-    over `seq_len` and returns `(batch, 1, channels)`.
-
-    Note:
-        `precompute` divides by `in_features`, so the integer path is only
-        correct if `in_features` is the sequence length. The VHDL template
-        instead steps through the inputs with a stride of `in_features`, and
-        its outputs currently differ from `int_forward` (checked with GHDL).
+    over `seq_len` and returns `(batch, 1, channels)`. `in_features` is the
+    sequence length and `in_num_dimensions` the number of channels; with
+    these, the VHDL design matches `int_forward` (checked with GHDL).
     """
 
     def __init__(
@@ -49,11 +45,10 @@ class AVGPooling1d(DesignCreatorModule, nn.Module):
 
         Args:
             name: Name of the layer, used for the saved quantization data.
-            in_features: Sequence length of the inputs; `precompute` divides
-                the sum by it.
-            out_features: Passed to the VHDL design.
-            in_num_dimensions: Passed to the VHDL design.
-            out_num_dimensions: Passed to the VHDL design.
+            in_features: Sequence length of the inputs.
+            out_features: Sequence length of the outputs, usually 1.
+            in_num_dimensions: Number of channels of the inputs.
+            out_num_dimensions: Number of channels of the outputs.
             quant_bits: Bit width of inputs and outputs.
             quant_data_dir: Directory for the quantized inputs and outputs
                 saved by `int_forward`. `None` disables saving.

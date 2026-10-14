@@ -31,6 +31,19 @@ entity ${name} is
     );
 end ${name};
 architecture rtl of ${name} is
+    -- Saturate to the range of a signed number with `width` bits.
+    function saturate(value : signed; width : natural) return signed is
+        constant MAX_VAL : integer := 2**(width - 1) - 1;
+        constant MIN_VAL : integer := -(2**(width - 1));
+    begin
+        if value > to_signed(MAX_VAL, value'length) then
+            return to_signed(MAX_VAL, width);
+        elsif value < to_signed(MIN_VAL, value'length) then
+            return to_signed(MIN_VAL, width);
+        else
+            return resize(value, width);
+        end if;
+    end function;
     function multiply(
         a : in signed(DATA_WIDTH downto 0);
         b : in signed(DATA_WIDTH downto 0)
@@ -124,7 +137,7 @@ begin
     add : process( clock, layer_state )
         variable input_idx : integer  range 0 to NUM_FEATURES * NUM_DIMENSIONS-1 := 0;
         variable output_idx : integer  range 0 to NUM_FEATURES * NUM_DIMENSIONS-1 := 0;
-        variable var_y_store : signed(DATA_WIDTH downto 0);
+        variable var_y_store : signed(DATA_WIDTH + 1 downto 0);
     begin
         if rising_edge(clock) then
             if layer_state=s_stop then
@@ -154,8 +167,8 @@ begin
                         product_scaled <= shift_with_rounding(product_to_scaling, M_Q_SHIFT);
                         add_state <= s_output;
                     when s_output =>
-                        var_y_store := product_scaled + to_signed(Z_Y, product_scaled'length);
-                        y_store_data <= std_logic_vector(resize(var_y_store, y_store_data'length));
+                        var_y_store := resize(product_scaled, var_y_store'length) + to_signed(Z_Y, var_y_store'length);
+                        y_store_data <= std_logic_vector(saturate(var_y_store, y_store_data'length));
                         y_store_addr <= output_idx;
                         y_store_en <= '1';
                         if input_idx < NUM_DIMENSIONS * NUM_FEATURES-1 then

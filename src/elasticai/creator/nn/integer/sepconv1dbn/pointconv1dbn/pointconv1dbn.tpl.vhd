@@ -33,6 +33,19 @@ entity ${name} is
     );
 end entity ${name};
 architecture rtl of ${name} is
+    -- Saturate to the range of a signed number with `width` bits.
+    function saturate(value : signed; width : natural) return signed is
+        constant MAX_VAL : integer := 2**(width - 1) - 1;
+        constant MIN_VAL : integer := -(2**(width - 1));
+    begin
+        if value > to_signed(MAX_VAL, value'length) then
+            return to_signed(MAX_VAL, width);
+        elsif value < to_signed(MIN_VAL, value'length) then
+            return to_signed(MIN_VAL, width);
+        else
+            return resize(value, width);
+        end if;
+    end function;
 function log2(val : INTEGER) return natural is
         variable result : natural;
     begin
@@ -73,9 +86,9 @@ function log2(val : INTEGER) return natural is
             TMP_3 := TMP_2 + 1;
         end if;
         if is_negative then
-            return -resize(TMP_3, DATA_WIDTH + 1);
+            return -saturate(TMP_3, DATA_WIDTH + 1);
         else
-            return resize(TMP_3, DATA_WIDTH + 1);
+            return saturate(TMP_3, DATA_WIDTH + 1);
         end if;
     end function;
     constant KERNEL_CH_NUM : integer := IN_CHANNELS;
@@ -135,7 +148,7 @@ begin
         variable cnt_in_out_ch : integer range 0 to OUT_CHANNELS := 0;
         variable y_idx : integer range 0 to IN_SEQ_LEN * OUT_CHANNELS := 0;
         variable var_b_add_z_b : integer range -2**(2*(DATA_WIDTH+1)-1) to 2**(2*(DATA_WIDTH+1)-1)-1 := 0;
-        variable var_y_store : signed(DATA_WIDTH downto 0);
+        variable var_y_store : signed(DATA_WIDTH + 1 downto 0);
         variable row_idx : integer range 0 to OUT_CHANNELS := 0;
     begin
         if rising_edge(clock) then
@@ -150,6 +163,9 @@ begin
                 cnt_in_kernel :=0;
                 ready <= '0';
                 row_idx := 0;
+                s_w_addr <= (others => '0');
+                s_x_addr <= (others => '0');
+                s_b_addr <= (others => '0');
             else
                 case mac_state is
                     when s_init =>
@@ -189,8 +205,8 @@ begin
                         y_scaled <= scaling(macc_sum, M_Q_SIGNED, M_Q_SHIFT);
                         mac_state <= s_output;
                     when s_output =>
-                        var_y_store := y_scaled + to_signed(Z_Y, y_scaled'length);
-                        y_store_data <= std_logic_vector(resize(var_y_store, y_store_data'length));
+                        var_y_store := resize(y_scaled, var_y_store'length) + to_signed(Z_Y, var_y_store'length);
+                        y_store_data <= std_logic_vector(saturate(var_y_store, y_store_data'length));
                         y_store_en <= '1';
                         y_store_addr <= to_unsigned(y_idx, y_store_addr'length);
                         if row_idx < OUT_CHANNELS-1 then

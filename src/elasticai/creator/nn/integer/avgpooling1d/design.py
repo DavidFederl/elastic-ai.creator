@@ -15,9 +15,10 @@ from elasticai.creator.vhdl.design.ports import Port
 class AVGPooling1d(Design):
     """VHDL design of an integer global average pooling layer.
 
-    Sums the inputs, scales the sum by `m_q * 2**-m_q_shift` and adds the
-    output zero point. The layer uses the buffered interface (`x`,
-    `x_address`, `y`, `y_address`, `enable`, `done`, `clock`).
+    For every channel, sums the `in_features` inputs of the sequence, scales
+    the sum by `m_q * 2**-m_q_shift` and adds the output zero point. The
+    layer uses the buffered interface (`x`, `x_address`, `y`, `y_address`,
+    `enable`, `done`, `clock`).
     """
 
     def __init__(
@@ -40,10 +41,10 @@ class AVGPooling1d(Design):
         Args:
             name: Name of the VHDL entity.
             data_width: Bit width of inputs and outputs.
-            in_features: Features per input vector.
-            out_features: Features per output vector.
-            in_num_dimensions: Number of input vectors.
-            out_num_dimensions: Number of output vectors.
+            in_features: Sequence length of the inputs.
+            out_features: Sequence length of the outputs, usually 1.
+            in_num_dimensions: Number of channels of the inputs.
+            out_num_dimensions: Number of channels of the outputs.
             m_q: Integer multiplier of the scale `M`.
             m_q_shift: Right shift of the scale `M`.
             z_x: Zero point of the inputs.

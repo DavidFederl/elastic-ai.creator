@@ -40,6 +40,19 @@ entity ${name} is
     );
 end ${name};
 architecture rtl of ${name} is
+    -- Saturate to the range of a signed number with `width` bits.
+    function saturate(value : signed; width : natural) return signed is
+        constant MAX_VAL : integer := 2**(width - 1) - 1;
+        constant MIN_VAL : integer := -(2**(width - 1));
+    begin
+        if value > to_signed(MAX_VAL, value'length) then
+            return to_signed(MAX_VAL, width);
+        elsif value < to_signed(MIN_VAL, value'length) then
+            return to_signed(MIN_VAL, width);
+        else
+            return resize(value, width);
+        end if;
+    end function;
     constant MACC_OUT_WIDTH : integer := 2 * (DATA_WIDTH + 1) + 1;
     function multiply_accumulate(
                     w : in signed(DATA_WIDTH downto 0);
@@ -71,9 +84,9 @@ architecture rtl of ${name} is
             TMP_3 := TMP_2 + 1;
         end if;
         if is_negative then
-            return -resize(TMP_3, DATA_WIDTH + 1);
+            return -saturate(TMP_3, DATA_WIDTH + 1);
         else
-            return resize(TMP_3, DATA_WIDTH + 1);
+            return saturate(TMP_3, DATA_WIDTH + 1);
         end if;
     end function;
     function log2(val : INTEGER) return natural is
@@ -140,9 +153,7 @@ begin
         variable mac_cnt : integer range 0 to X_1_DIM_C+1 := 0;
         variable output_idx : integer  range 0 to Y_DIM_A * Y_DIM_B * Y_DIM_C-1 := 0;
         variable var_product : signed(DATA_WIDTH - 1 downto 0);
-        variable var_y_store : signed(DATA_WIDTH downto 0);
-        variable input_1_offset : integer;
-        variable input_2_offset : integer;
+        variable var_y_store : signed(DATA_WIDTH + 1 downto 0);
     begin
         if rising_edge(clock) then
             if layer_state=s_stop then
@@ -151,17 +162,19 @@ begin
                 y_dim_b_idx := 0;
                 y_dim_c_idx := 0;
                 output_idx := 0;
-                input_1_offset := 0;
-                input_2_offset := 0;
+                mac_cnt := 0;
                 y_store_en <= '0';
             elsif layer_state=s_forward then
                 case mac_state is
                     when s_init =>
-                        input_1_idx := input_1_offset + y_dim_b_idx * X_1_DIM_C;
+                        -- The inputs are stored row-major as (dim_a, dim_b, dim_c).
+                        -- Score mode computes y[a][b][c] = sum_k x_1[b][a][k] * x_2[c][a][k],
+                        -- att mode y[a][b][c] = sum_k x_1[b][a][k] * x_2[k][b][c].
+                        input_1_idx := y_dim_b_idx * X_1_DIM_B * X_1_DIM_C + y_dim_a_idx * X_1_DIM_C;
                         if IS_SCORE_MODE then
-                            input_2_idx := input_2_offset + y_dim_c_idx * X_2_DIM_C;
+                            input_2_idx := y_dim_c_idx * X_2_DIM_B * X_2_DIM_C + y_dim_a_idx * X_2_DIM_C;
                         else
-                            input_2_idx := input_2_offset + y_dim_c_idx;
+                            input_2_idx := y_dim_b_idx * X_2_DIM_C + y_dim_c_idx;
                         end if;
                         mac_state <= s_preload;
                         y_store_en <= '0';
@@ -173,7 +186,7 @@ begin
                         if IS_SCORE_MODE then
                             input_2_idx := input_2_idx + 1;
                         else
-                            input_2_idx := input_2_idx + X_2_DIM_C;
+                            input_2_idx := input_2_idx + X_2_DIM_B * X_2_DIM_C;
                         end if;
                         mac_state <= s_accumulate;
                     when s_accumulate =>
@@ -187,7 +200,7 @@ begin
                                 if IS_SCORE_MODE then
                                     input_2_idx := input_2_idx + 1;
                                 else
-                                    input_2_idx := input_2_idx + X_2_DIM_C;
+                                    input_2_idx := input_2_idx + X_2_DIM_B * X_2_DIM_C;
                                 end if;
                             end if;
                             mac_state <= s_accumulate;
@@ -199,8 +212,8 @@ begin
                         y_scaled <= scaling(macc_sum, M_Q_SIGNED, M_Q_SHIFT);
                         mac_state <= s_output;
                     when s_output =>
-                        var_y_store := y_scaled + to_signed(Z_Y, y_scaled'length);
-                        y_store_data <= std_logic_vector(resize(var_y_store, y_store_data'length));
+                        var_y_store := resize(y_scaled, var_y_store'length) + to_signed(Z_Y, var_y_store'length);
+                        y_store_data <= std_logic_vector(saturate(var_y_store, y_store_data'length));
                         y_store_addr <= output_idx;
                         y_dim_c_idx := y_dim_c_idx + 1;
                         y_store_en <= '1';
@@ -214,12 +227,6 @@ begin
                                 output_idx := output_idx + 1;
                                 mac_state <= s_init;
                             else
-                                input_1_offset := input_1_offset + X_1_DIM_C;
-                                if IS_SCORE_MODE then
-                                    input_2_offset := input_2_offset + X_1_DIM_C;
-                                else
-                                    input_2_offset := 0;
-                                end if;
                                 y_dim_b_idx := 0;
                                 y_dim_a_idx := y_dim_a_idx + 1;
                                 if y_dim_a_idx < Y_DIM_A then
