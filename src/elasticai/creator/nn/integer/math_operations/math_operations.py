@@ -75,8 +75,8 @@ class MathOperations:
     ) -> torch.Tensor:
         """Multiply two 2D integer matrices and clamp the product.
 
-        The product is computed element by element on the CPU with Python loops,
-        so it is slow for large matrices.
+        The product is accumulated in `int64` so intermediate sums cannot wrap
+        before clamping.
 
         Args:
             a: Left matrix of shape `(m, k)`, dtype `torch.int32`.
@@ -93,20 +93,10 @@ class MathOperations:
         check_dtype("a", a, torch.int32)
         check_dtype("b", b, torch.int32)
 
-        a_cpu = a.cpu().to(torch.int32)
-        b_cpu = b.cpu().to(torch.int32)
-
-        m, k = a_cpu.shape
-        k, n = b_cpu.shape
-
-        c_cpu = torch.zeros((m, n), dtype=torch.int32)
-
-        for i in range(m):
-            for j in range(n):
-                for p in range(k):
-                    c_cpu[i, j] += a_cpu[i, p].item() * b_cpu[p, j].item()
-        c = c_cpu.to(a.device)
-        return self.clamp_result(c, c_quant_bits)
+        c_cpu = a.cpu().to(torch.int64) @ b.cpu().to(torch.int64)
+        c_cpu = self.clamp_result(c_cpu, c_quant_bits)
+        c = c_cpu.to(torch.int32).to(a.device)
+        return c
 
     def int_mac(
         self,

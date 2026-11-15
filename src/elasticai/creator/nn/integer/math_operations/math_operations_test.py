@@ -76,6 +76,17 @@ def test_intmatmul_correctly():
     assert torch.equal(actual_results, expected_results)
 
 
+def test_intmatmul_clamps_before_int32_wrap(math_ops):
+    # Accumulating 4 * 2**30 in int32 wraps to 0; the sum must be clamped to
+    # the quant_bits range instead.
+    inputs_a = torch.tensor([[2**30, 2**30]], dtype=torch.int32)
+    inputs_b = torch.tensor([[2], [2]], dtype=torch.int32)
+    c_quant_bits = 32
+    actual_results = math_ops.intmatmul(inputs_a, inputs_b, c_quant_bits)
+    expected_results = torch.tensor([[2**31 - 1]], dtype=torch.int32)
+    assert torch.equal(actual_results, expected_results)
+
+
 def test_intmatmul_with_wrong_dtype():
     inputs_a = torch.tensor([[127, 34], [56, 78]], dtype=torch.int32)
     inputs_b = torch.tensor([[-54, 29], [39, 12]], dtype=torch.float32)
